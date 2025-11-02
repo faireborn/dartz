@@ -1,0 +1,141 @@
+const std = @import("std");
+
+pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array: type, comptime ArrayU: type) type {
+    return struct {
+        array: []UnitT,
+        used: []u8,
+        array_size: usize = 0,
+        alloc_size: usize = 0,
+        key_size: usize = 0,
+        key: []const []const Node,
+        length: []usize,
+        value: []Array,
+        progress: usize,
+        next_check_pos: usize,
+        no_delete: bool = false,
+        allocator: std.mem.Allocator,
+
+        const Self = @This();
+
+        fn init(allocator: std.mem.Allocator) Self {
+            return .{
+                .allocator = allocator,
+            };
+        }
+
+        fn deinit(self: Self) void {
+            self.allocator.free(self.array);
+        }
+
+        fn setResult(_: Self, x: *Value, r: Value) void {
+            x.* = r;
+        }
+
+        fn setResultPair(_: Self, x: *ResultPair, r: Value, l: usize) void {
+            x.value = r;
+            x.length = l;
+        }
+
+        fn setArray(self: *Self, array: []UnitT, array_size: usize) void {
+            self.clear();
+            self.array = array;
+            self.array_size = array_size;
+        }
+
+        fn clear(self: *Self) void {
+            self.allocator.free(self.used);
+        }
+
+        fn unitSize(_: Self) usize {
+            return @sizeOf(UnitT);
+        }
+
+        fn size(self: Self) usize {
+            return self.array_size;
+        }
+
+        fn totalSize(self: Self) usize {
+            return self.array_size * @sizeOf(UnitT);
+        }
+
+        fn nonZeroSize(self: Self) usize {
+            var result = 0;
+            for (self.array) |unit| {
+                if (unit.check > 0) {
+                    result += 1;
+                }
+            }
+            return result;
+        }
+
+        fn build(self: *Self, key_size: usize, key: []const []const Key, length: []const usize, value: []const Value) !void {
+            if (key_size < 1) {
+                return error.BuildKeySizeError;
+            }
+            self.key_size = key_size;
+            self.key = key;
+            self.length = length;
+            self.value = value;
+
+            self.array[0].base = 1;
+            self.next_check_pos = 0;
+
+            const root_node: NodeT = .{ .left = 0, .right = key_size, .depth = 0 };
+            _ = root_node;
+        }
+
+        fn open() !void {}
+
+        fn save() !void {}
+
+        fn resize(self: *Self, new_size: usize) usize {
+            const tmp = UnitT{
+                .base = 0,
+                .check = 0,
+            };
+
+            self.array = pad(UnitT, self.allocator, self.array, self.alloc_size, new_size, tmp);
+            self.used = pad(u8, self.allocator, self.used, self.alloc_size, new_size, 0);
+
+            self.alloc_size = new_size;
+            return new_size;
+        }
+
+        fn fetch(parent: []const NodeT, siblings: std.ArrayList(NodeT)) void {
+            _ = parent;
+            _ = siblings;
+        }
+
+        fn pad(comptime T: type, allocator: std.mem.Allocator, array: []const T, n: usize, l: usize, v: T) []T {
+            defer allocator.free(array);
+            const tmp = try allocator.alloc(T, l);
+            @memcpy(tmp[0..n], array);
+            @memset(tmp[n..], v);
+            return;
+        }
+
+        const ResultPair = struct {
+            value: Value,
+            length: usize,
+        };
+
+        const NodeT = struct {
+            code: ArrayU,
+            depth: usize,
+            left: usize,
+            right: usize,
+        };
+        const UnitT = struct {
+            base: Array,
+            check: ArrayU,
+        };
+
+        const Value = Array;
+        const Key = Node;
+        const Result = Array;
+
+        const _ = NodeU;
+    };
+}
+
+test "test" {}
