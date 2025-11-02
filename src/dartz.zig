@@ -72,16 +72,27 @@ pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array
             if (key_size < 1) {
                 return error.BuildKeySizeError;
             }
+
+            // Free `used` array
+            defer self.allocator.free(self.used);
+
             self.key_size = key_size;
             self.key = key;
             self.length = length;
             self.value = value;
+
+            // initialize `array` and `used`
+            self.resize(8192);
 
             self.array[0].base = 1;
             self.next_check_pos = 0;
 
             const root_node: NodeT = .{ .left = 0, .right = key_size, .depth = 0 };
             _ = root_node;
+
+            // Padding
+            self.array_size += (1 << 8 * @sizeOf(Key)) + 1;
+            if (self.array_size >= self.alloc_size) self.resize(self.array_size);
         }
 
         fn open() !void {}

@@ -1,4 +1,5 @@
 pub const DoubleArray = @import("dartz.zig").DoubleArrayImpl(u8, u8, i32, u32);
+pub const DoubleArrayImpl = @import("dartz.zig").DoubleArrayImpl;
 
 const std = @import("std");
 
