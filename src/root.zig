@@ -1,4 +1,5 @@
-//! By convention, root.zig is the root source file when making a library.
+pub const DoubleArray = @import("dartz.zig").DoubleArrayImpl(u8, u8, i32, u32);
+
 const std = @import("std");
 
 pub fn bufferedPrint() !void {
@@ -20,4 +21,8 @@ pub fn add(a: i32, b: i32) i32 {
 
 test "basic add functionality" {
     try std.testing.expect(add(3, 7) == 10);
+}
+
+test {
+    _ = @import("dartz.zig");
 }
