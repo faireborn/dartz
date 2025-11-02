@@ -1,5 +1,6 @@
 const std = @import("std");
 
+pub const DoubleArray = DoubleArrayImpl(u8, u8, i32, u32);
 pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array: type, comptime ArrayU: type) type {
     return struct {
         array: []UnitT,

@@ -4,7 +4,6 @@ const dartz = @import("dartz");
 pub fn main() !void {
     // Prints to stderr, ignoring potential errors.
     std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
-    try dartz.bufferedPrint();
 }
 
 test "simple test" {
