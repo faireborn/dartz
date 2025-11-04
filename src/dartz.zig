@@ -35,13 +35,8 @@ pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array
             };
         }
 
-        fn deinit(self: Self) void {
-            if (self.array != null) {
-                self.allocator.free(self.array.?);
-            }
-            if (self.used != null) {
-                self.allocator.free(self.used.?);
-            }
+        fn deinit(self: *Self) void {
+            self.clear();
         }
 
         fn setResult(_: Self, x: *Value, r: Value) void {
@@ -60,7 +55,14 @@ pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array
         }
 
         fn clear(self: *Self) void {
-            self.allocator.free(self.used);
+            if (!self.no_delete) {
+                reset(UnitT, self.allocator, &self.array);
+            }
+            reset(u8, self.allocator, &self.used);
+            self.used = null;
+            self.alloc_size = 0;
+            self.array_size = 0;
+            self.no_delete = false;
         }
 
         fn unitSize(_: Self) usize {
@@ -91,11 +93,7 @@ pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array
             }
 
             // Free `used` array and set null
-            defer {
-                self.allocator.free(self.used.?);
-                self.used = null;
-            }
-
+            defer reset(u8, self.allocator, &self.used);
             self.key_size = key_size;
             self.key = key;
             self.length = length;
@@ -148,6 +146,15 @@ pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array
 
             @memset(tmp[n..], v);
             return tmp;
+        }
+
+        fn reset(comptime T: type, allocator: std.mem.Allocator, array: *?[]T) void {
+            if (array.* == null) {
+                return;
+            }
+
+            allocator.free(array.*.?);
+            array.* = null;
         }
 
         const ResultPair = struct {
