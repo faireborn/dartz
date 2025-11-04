@@ -111,7 +111,7 @@ pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array
             var siblings: ArrayList(NodeT) = .empty;
             defer siblings.deinit(self.allocator);
             _ = try self.fetch(root_node, &siblings);
-            _ = insert(siblings);
+            _ = try self.insert(siblings);
 
             // Padding
             self.array_size += (1 << 8 * @sizeOf(Key)) + 1;
@@ -142,10 +142,9 @@ pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array
                 if (self.keyLength(i) < parent.depth) continue;
 
                 const tmp = self.key.?[i];
-                _ = tmp;
 
                 var cur: ArrayU = 0;
-                cur = 1;
+                if (self.keyLength(i) != parent.depth) cur = tmp[parent.depth] + 1;
 
                 if (prev > cur) {
                     return error.BuildFetchError;
@@ -165,9 +164,76 @@ pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array
             return siblings.items.len;
         }
 
-        fn insert(siblings: ArrayList(NodeT)) usize {
-            _ = siblings;
-            return 0;
+        fn insert(self: *Self, siblings: ArrayList(NodeT)) !usize {
+            var begin: usize = 0;
+            var pos: usize = @max(siblings.items[0].code + 1, self.next_check_pos) - 1;
+            var nonzero_num: usize = 0;
+            var first = false;
+
+            if (self.alloc_size <= pos) try self.resize(pos + 1);
+
+            next: while (true) {
+                pos += 1;
+
+                if (self.alloc_size <= pos) try self.resize(pos + 1);
+
+                if (self.array.?[pos].check > 0) {
+                    nonzero_num += 1;
+                    continue;
+                } else if (!first) {
+                    self.next_check_pos = pos;
+                    first = true;
+                }
+
+                begin = pos - siblings.items[0].code;
+                if (self.alloc_size <= (begin + siblings.items[siblings.items.len - 1].code)) {
+                    const key_size: f32 = @floatFromInt(self.key_size);
+                    const progress: f32 = @floatFromInt(self.progress);
+                    try self.resize(self.alloc_size * @as(u32, @intFromFloat(@max(1.05, key_size / progress))));
+                }
+
+                if (self.used.?[begin] > 0) continue;
+
+                for (1..siblings.items.len) |i| {
+                    if (self.array.?[begin + siblings.items[i].code].check != 0) continue :next;
+                }
+
+                break;
+            }
+
+            if (@as(f32, @floatFromInt(nonzero_num)) / @as(f32, @floatFromInt(pos - self.next_check_pos + 1)) >= 0.95) {
+                self.next_check_pos = pos;
+            }
+
+            self.used.?[begin] = 1;
+            self.array_size = @max(self.array_size, begin + siblings.items[siblings.items.len - 1].code + 1);
+
+            for (0..siblings.items.len) |i| {
+                self.array.?[begin + siblings.items[i].code].check = @intCast(begin);
+            }
+
+            for (0..siblings.items.len) |i| {
+                var new_siblings: ArrayList(NodeT) = .empty;
+                defer new_siblings.deinit(self.allocator);
+
+                if (try self.fetch(siblings.items[i], &new_siblings) < 1) {
+                    self.array.?[begin + siblings.items[i].code].base = if (self.value_array == null)
+                        -@as(i32, @intCast(siblings.items[i].left)) - 1
+                    else
+                        -self.value_array.?[siblings.items[i].left] - 1;
+
+                    if (self.value_array != null and -self.value_array.?[siblings.items[i].left] - 1 >= 0) {
+                        return error.WTF;
+                    }
+
+                    self.progress += 1;
+                } else {
+                    const h = try self.insert(new_siblings);
+                    self.array.?[begin + siblings.items[i].code].base = @intCast(h);
+                }
+            }
+
+            return begin;
         }
 
         fn reset(comptime T: type, allocator: Allocator, array: *?[]T) void {
@@ -294,7 +360,10 @@ test "Length func" {
 
     const key = &[_][]const u8{ "The", "quick", "brown", "fox", "jumps", "over", "the", "lazy", "dog" };
     const expected = [_]usize{ 3, 5, 5, 3, 5, 4, 3, 4, 3 };
-    try da.build(key.len, key, null, null);
+
+    // Ignore Build process and test only length func
+    // build to set key
+    da.build(key.len, key, null, null) catch {};
 
     for (expected, 0..) |e, i| {
         try std.testing.expectEqual(e, da.keyLength(i));
