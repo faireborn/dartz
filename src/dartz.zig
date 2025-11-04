@@ -293,14 +293,10 @@ test "Length func" {
     defer da.deinit();
 
     const key = &[_][]const u8{ "The", "quick", "brown", "fox", "jumps", "over", "the", "lazy", "dog" };
+    const key_length = [_]usize{ 3, 5, 5, 3, 5, 4, 3, 4, 3 };
     try da.build(key.len, key, null, null);
-    try std.testing.expectEqual(3, da.keyLength(0));
-    try std.testing.expectEqual(5, da.keyLength(1));
-    try std.testing.expectEqual(5, da.keyLength(2));
-    try std.testing.expectEqual(3, da.keyLength(3));
-    try std.testing.expectEqual(5, da.keyLength(4));
-    try std.testing.expectEqual(4, da.keyLength(5));
-    try std.testing.expectEqual(3, da.keyLength(6));
-    try std.testing.expectEqual(4, da.keyLength(7));
-    try std.testing.expectEqual(3, da.keyLength(8));
+
+    for (key_length, 0..) |k, i| {
+        try std.testing.expectEqual(k, da.keyLength(i));
+    }
 }
