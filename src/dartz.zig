@@ -59,7 +59,6 @@ pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array
                 reset(UnitT, self.allocator, &self.array);
             }
             reset(u8, self.allocator, &self.used);
-            self.used = null;
             self.alloc_size = 0;
             self.array_size = 0;
             self.no_delete = false;
@@ -191,6 +190,41 @@ test "Resize" {
     try std.testing.expectEqual(alloc_size, da.array.?.len);
     try std.testing.expectEqual(alloc_size, da.used.?.len);
     try std.testing.expectEqual(alloc_size, da.alloc_size);
+}
+
+test "Clear" {
+    {
+        // For `no_delete` = false
+        var da = DoubleArray.init(std.testing.allocator);
+        defer da.deinit();
+
+        const alloc_size = 1024;
+        try da.resize(alloc_size);
+        da.clear();
+
+        try std.testing.expectEqual(null, da.array);
+        try std.testing.expectEqual(null, da.used);
+        try std.testing.expectEqual(0, da.alloc_size);
+        try std.testing.expectEqual(0, da.array_size);
+        try std.testing.expectEqual(false, da.no_delete);
+    }
+    {
+        // For `no_delete` = true
+        var da = DoubleArray.init(std.testing.allocator);
+        defer da.deinit();
+
+        const alloc_size = 1024;
+        try da.resize(alloc_size);
+        da.no_delete = true;
+        da.clear();
+
+        try std.testing.expect(null != da.array);
+        try std.testing.expectEqual(alloc_size, da.array.?.len);
+        try std.testing.expectEqual(null, da.used);
+        try std.testing.expectEqual(0, da.alloc_size);
+        try std.testing.expectEqual(0, da.array_size);
+        try std.testing.expectEqual(false, da.no_delete);
+    }
 }
 
 test "Build" {
