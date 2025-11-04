@@ -3,14 +3,14 @@ const std = @import("std");
 pub const DoubleArray = DoubleArrayImpl(u8, u8, i32, u32);
 pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array: type, comptime ArrayU: type) type {
     return struct {
-        array: []UnitT,
-        used: []u8,
+        array: ?[]UnitT,
+        used: ?[]u8,
         array_size: usize,
         alloc_size: usize,
         key_size: usize,
         key: ?[]const []const Node,
-        length: ?[]usize,
-        value: ?[]Array,
+        length: ?[]const usize,
+        value: ?[]const Array,
         progress: usize,
         next_check_pos: usize,
         no_delete: bool,
@@ -18,10 +18,10 @@ pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array
 
         const Self = @This();
 
-        fn init(allocator: std.mem.Allocator) !Self {
+        fn init(allocator: std.mem.Allocator) Self {
             return .{
-                .array = try allocator.alloc(UnitT, 0),
-                .used = try allocator.alloc(u8, 0),
+                .array = null,
+                .used = null,
                 .array_size = 0,
                 .alloc_size = 0,
                 .key_size = 0,
@@ -36,8 +36,12 @@ pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array
         }
 
         fn deinit(self: Self) void {
-            self.allocator.free(self.array);
-            self.allocator.free(self.used);
+            if (self.array != null) {
+                self.allocator.free(self.array.?);
+            }
+            if (self.used != null) {
+                self.allocator.free(self.used.?);
+            }
         }
 
         fn setResult(_: Self, x: *Value, r: Value) void {
@@ -81,13 +85,16 @@ pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array
             return result;
         }
 
-        fn build(self: *Self, key_size: usize, key: []const []const Key, length: []const usize, value: []const Value) !void {
+        fn build(self: *Self, key_size: usize, key: []const []const Key, length: ?[]const usize, value: ?[]const Value) !void {
             if (key_size < 1) {
                 return error.BuildKeySizeError;
             }
 
-            // Free `used` array
-            defer self.allocator.free(self.used);
+            // Free `used` array and set null
+            defer {
+                self.allocator.free(self.used.?);
+                self.used = null;
+            }
 
             self.key_size = key_size;
             self.key = key;
@@ -97,10 +104,10 @@ pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array
             // initialize `array` and `used`
             try self.resize(8192);
 
-            self.array[0].base = 1;
+            self.array.?[0].base = 1;
             self.next_check_pos = 0;
 
-            const root_node: NodeT = .{ .left = 0, .right = key_size, .depth = 0 };
+            const root_node: NodeT = .{ .code = 0, .left = 0, .right = key_size, .depth = 0 };
             _ = root_node;
 
             // Padding
@@ -130,10 +137,15 @@ pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array
             _ = siblings;
         }
 
-        fn pad(comptime T: type, allocator: std.mem.Allocator, array: []const T, n: usize, l: usize, v: T) ![]T {
-            defer allocator.free(array);
+        fn pad(comptime T: type, allocator: std.mem.Allocator, array: ?[]const T, n: usize, l: usize, v: T) ![]T {
             const tmp = try allocator.alloc(T, l);
-            @memcpy(tmp[0..n], array);
+
+            if (array != null) {
+                // Free original array
+                defer allocator.free(array.?);
+                @memcpy(tmp[0..n], array.?);
+            }
+
             @memset(tmp[n..], v);
             return tmp;
         }
@@ -163,13 +175,21 @@ pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array
 }
 
 test "Resize" {
-    var da = try DoubleArray.init(std.testing.allocator);
+    var da = DoubleArray.init(std.testing.allocator);
     defer da.deinit();
 
     const alloc_size = 1024;
     try da.resize(alloc_size);
 
-    try std.testing.expectEqual(alloc_size, da.array.len);
-    try std.testing.expectEqual(alloc_size, da.used.len);
+    try std.testing.expectEqual(alloc_size, da.array.?.len);
+    try std.testing.expectEqual(alloc_size, da.used.?.len);
     try std.testing.expectEqual(alloc_size, da.alloc_size);
+}
+
+test "Build" {
+    var da = DoubleArray.init(std.testing.allocator);
+    defer da.deinit();
+
+    const key = &[_][]const u8{ "hello", "world" };
+    try da.build(key.len, key, null, null);
 }
