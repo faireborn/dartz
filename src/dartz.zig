@@ -1,4 +1,6 @@
 const std = @import("std");
+const Allocator = std.mem.Allocator;
+const ArrayList = std.ArrayList;
 
 pub const DoubleArray = DoubleArrayImpl(u8, u8, i32, u32);
 pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array: type, comptime ArrayU: type) type {
@@ -9,16 +11,16 @@ pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array
         alloc_size: usize,
         key_size: usize,
         key: ?[]const []const Node,
-        length: ?[]const usize,
-        value: ?[]const Array,
+        length_array: ?[]const usize,
+        value_array: ?[]const Array,
         progress: usize,
         next_check_pos: usize,
         no_delete: bool,
-        allocator: std.mem.Allocator,
+        allocator: Allocator,
 
         const Self = @This();
 
-        fn init(allocator: std.mem.Allocator) Self {
+        fn init(allocator: Allocator) Self {
             return .{
                 .array = null,
                 .used = null,
@@ -26,8 +28,8 @@ pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array
                 .alloc_size = 0,
                 .key_size = 0,
                 .key = null,
-                .length = null,
-                .value = null,
+                .length_array = null,
+                .value_array = null,
                 .progress = 0,
                 .next_check_pos = 0,
                 .no_delete = false,
@@ -86,17 +88,17 @@ pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array
             return result;
         }
 
-        fn build(self: *Self, key_size: usize, key: []const []const Key, length: ?[]const usize, value: ?[]const Value) !void {
-            if (key_size < 1) {
-                return error.BuildKeySizeError;
-            }
+        fn build(self: *Self, key_size: usize, key: ?[]const []const Key, length_array: ?[]const usize, value_array: ?[]const Value) !void {
+            if (key_size < 1 or key == null) return error.BuildKeyError;
 
             // Free `used` array and set null
             defer reset(u8, self.allocator, &self.used);
+
             self.key_size = key_size;
             self.key = key;
-            self.length = length;
-            self.value = value;
+            self.length_array = length_array;
+            self.value_array = value_array;
+            self.progress = 0;
 
             // initialize `array` and `used`
             try self.resize(8192);
@@ -105,7 +107,11 @@ pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array
             self.next_check_pos = 0;
 
             const root_node: NodeT = .{ .code = 0, .left = 0, .right = key_size, .depth = 0 };
-            _ = root_node;
+
+            var siblings: ArrayList(NodeT) = .empty;
+            defer siblings.deinit(self.allocator);
+            _ = try self.fetch(root_node, &siblings);
+            _ = insert(siblings);
 
             // Padding
             self.array_size += (1 << 8 * @sizeOf(Key)) + 1;
@@ -129,31 +135,53 @@ pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array
             return;
         }
 
-        fn fetch(parent: []const NodeT, siblings: std.ArrayList(NodeT)) void {
-            _ = parent;
-            _ = siblings;
-        }
+        fn fetch(self: Self, parent: NodeT, siblings: *ArrayList(NodeT)) !usize {
+            var prev: ArrayU = 0;
 
-        fn pad(comptime T: type, allocator: std.mem.Allocator, array: ?[]const T, n: usize, l: usize, v: T) ![]T {
-            const tmp = try allocator.alloc(T, l);
+            for (parent.left..parent.right) |i| {
+                if (self.keyLength(i) < parent.depth) continue;
 
-            if (array != null) {
-                // Free original array
-                defer allocator.free(array.?);
-                @memcpy(tmp[0..n], array.?);
+                const tmp = self.key.?[i];
+                _ = tmp;
+
+                var cur: ArrayU = 0;
+                cur = 1;
+
+                if (prev > cur) {
+                    return error.BuildFetchError;
+                }
+
+                if (cur != prev or siblings.items.len == 0) {
+                    const tmp_node = NodeT{ .depth = parent.depth + 1, .code = cur, .left = i, .right = 0 };
+                    if (siblings.items.len > 0) siblings.items[siblings.items.len - 1].right = i;
+
+                    try siblings.append(self.allocator, tmp_node);
+                }
+
+                prev = cur;
             }
 
-            @memset(tmp[n..], v);
-            return tmp;
+            if (siblings.items.len > 0) siblings.items[siblings.items.len - 1].right = parent.right;
+            return siblings.items.len;
         }
 
-        fn reset(comptime T: type, allocator: std.mem.Allocator, array: *?[]T) void {
+        fn insert(siblings: ArrayList(NodeT)) usize {
+            _ = siblings;
+            return 0;
+        }
+
+        fn reset(comptime T: type, allocator: Allocator, array: *?[]T) void {
             if (array.* == null) {
                 return;
             }
 
             allocator.free(array.*.?);
             array.* = null;
+        }
+
+        fn keyLength(self: Self, i: usize) usize {
+            if (self.length_array != null) return self.length_array.?[i];
+            return len(Node, self.key.?[i]);
         }
 
         const ResultPair = struct {
@@ -178,6 +206,23 @@ pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array
 
         const _ = NodeU;
     };
+}
+
+fn len(comptime T: type, key: []const T) usize {
+    return key.len;
+}
+
+fn pad(comptime T: type, allocator: Allocator, array: ?[]const T, n: usize, l: usize, v: T) ![]T {
+    const tmp = try allocator.alloc(T, l);
+
+    if (array != null) {
+        // Free original array
+        defer allocator.free(array.?);
+        @memcpy(tmp[0..n], array.?);
+    }
+
+    @memset(tmp[n..], v);
+    return tmp;
 }
 
 test "Resize" {
@@ -233,4 +278,29 @@ test "Build" {
 
     const key = &[_][]const u8{ "hello", "world" };
     try da.build(key.len, key, null, null);
+}
+
+test "Type which DoubleArray struct has" {
+    var da = DoubleArray.init(std.testing.allocator);
+    defer da.deinit();
+
+    try std.testing.expectEqual(u8, DoubleArray.Key);
+    try std.testing.expectEqual(i32, DoubleArray.Result);
+}
+
+test "Length func" {
+    var da = DoubleArray.init(std.testing.allocator);
+    defer da.deinit();
+
+    const key = &[_][]const u8{ "The", "quick", "brown", "fox", "jumps", "over", "the", "lazy", "dog" };
+    try da.build(key.len, key, null, null);
+    try std.testing.expectEqual(3, da.keyLength(0));
+    try std.testing.expectEqual(5, da.keyLength(1));
+    try std.testing.expectEqual(5, da.keyLength(2));
+    try std.testing.expectEqual(3, da.keyLength(3));
+    try std.testing.expectEqual(5, da.keyLength(4));
+    try std.testing.expectEqual(4, da.keyLength(5));
+    try std.testing.expectEqual(3, da.keyLength(6));
+    try std.testing.expectEqual(4, da.keyLength(7));
+    try std.testing.expectEqual(3, da.keyLength(8));
 }
