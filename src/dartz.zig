@@ -5,27 +5,39 @@ pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array
     return struct {
         array: []UnitT,
         used: []u8,
-        array_size: usize = 0,
-        alloc_size: usize = 0,
-        key_size: usize = 0,
-        key: []const []const Node,
-        length: []usize,
-        value: []Array,
+        array_size: usize,
+        alloc_size: usize,
+        key_size: usize,
+        key: ?[]const []const Node,
+        length: ?[]usize,
+        value: ?[]Array,
         progress: usize,
         next_check_pos: usize,
-        no_delete: bool = false,
+        no_delete: bool,
         allocator: std.mem.Allocator,
 
         const Self = @This();
 
-        fn init(allocator: std.mem.Allocator) Self {
+        fn init(allocator: std.mem.Allocator) !Self {
             return .{
+                .array = try allocator.alloc(UnitT, 0),
+                .used = try allocator.alloc(u8, 0),
+                .array_size = 0,
+                .alloc_size = 0,
+                .key_size = 0,
+                .key = null,
+                .length = null,
+                .value = null,
+                .progress = 0,
+                .next_check_pos = 0,
+                .no_delete = false,
                 .allocator = allocator,
             };
         }
 
         fn deinit(self: Self) void {
             self.allocator.free(self.array);
+            self.allocator.free(self.used);
         }
 
         fn setResult(_: Self, x: *Value, r: Value) void {
@@ -83,7 +95,7 @@ pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array
             self.value = value;
 
             // initialize `array` and `used`
-            self.resize(8192);
+            try self.resize(8192);
 
             self.array[0].base = 1;
             self.next_check_pos = 0;
@@ -93,24 +105,24 @@ pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array
 
             // Padding
             self.array_size += (1 << 8 * @sizeOf(Key)) + 1;
-            if (self.array_size >= self.alloc_size) self.resize(self.array_size);
+            if (self.array_size >= self.alloc_size) try self.resize(self.array_size);
         }
 
         fn open() !void {}
 
         fn save() !void {}
 
-        fn resize(self: *Self, new_size: usize) usize {
+        fn resize(self: *Self, new_size: usize) !void {
             const tmp = UnitT{
                 .base = 0,
                 .check = 0,
             };
 
-            self.array = pad(UnitT, self.allocator, self.array, self.alloc_size, new_size, tmp);
-            self.used = pad(u8, self.allocator, self.used, self.alloc_size, new_size, 0);
+            self.array = try pad(UnitT, self.allocator, self.array, self.alloc_size, new_size, tmp);
+            self.used = try pad(u8, self.allocator, self.used, self.alloc_size, new_size, 0);
 
             self.alloc_size = new_size;
-            return new_size;
+            return;
         }
 
         fn fetch(parent: []const NodeT, siblings: std.ArrayList(NodeT)) void {
@@ -118,12 +130,12 @@ pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array
             _ = siblings;
         }
 
-        fn pad(comptime T: type, allocator: std.mem.Allocator, array: []const T, n: usize, l: usize, v: T) []T {
+        fn pad(comptime T: type, allocator: std.mem.Allocator, array: []const T, n: usize, l: usize, v: T) ![]T {
             defer allocator.free(array);
             const tmp = try allocator.alloc(T, l);
             @memcpy(tmp[0..n], array);
             @memset(tmp[n..], v);
-            return;
+            return tmp;
         }
 
         const ResultPair = struct {
@@ -150,4 +162,14 @@ pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array
     };
 }
 
-test "test" {}
+test "Resize" {
+    var da = try DoubleArray.init(std.testing.allocator);
+    defer da.deinit();
+
+    const alloc_size = 1024;
+    try da.resize(alloc_size);
+
+    try std.testing.expectEqual(alloc_size, da.array.len);
+    try std.testing.expectEqual(alloc_size, da.used.len);
+    try std.testing.expectEqual(alloc_size, da.alloc_size);
+}
