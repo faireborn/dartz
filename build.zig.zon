@@ -1,6 +1,6 @@
 .{
     .name = .dartz,
-    .version = "0.0.0",
+    .version = "0.1.0",
     .fingerprint = 0x85fc2e18532fc678,
     .minimum_zig_version = "0.15.2",
     .paths = .{
