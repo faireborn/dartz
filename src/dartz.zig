@@ -41,13 +41,15 @@ pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array
             self.clear();
         }
 
-        fn setResult(_: Self, x: *Value, r: Value) void {
-            x.* = r;
-        }
-
-        fn setResultPair(_: Self, x: *ResultPair, r: Value, l: usize) void {
-            x.value = r;
-            x.length = l;
+        fn setResult(comptime T: type, x: *T, r: Value, l: usize) !void {
+            switch (T) {
+                Value => x.* = r,
+                ResultPair => {
+                    x.value = r;
+                    x.length = l;
+                },
+                else => return error.InvalidResultType,
+            }
         }
 
         fn setArray(self: *Self, array: []UnitT, array_size: usize) void {
@@ -88,8 +90,8 @@ pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array
             return result;
         }
 
-        fn build(self: *Self, key_size: usize, key: ?[]const []const Key, length_array: ?[]const usize, value_array: ?[]const Value) !void {
-            if (key_size < 1 or key == null) return error.BuildKeyError;
+        fn build(self: *Self, key_size: usize, key: []const []const Key, length_array: ?[]const usize, value_array: ?[]const Value) !void {
+            if (key_size < 1) return error.BuildKeyError;
 
             // Free `used` array and set null
             defer reset(u8, self.allocator, &self.used);
@@ -121,6 +123,42 @@ pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array
         fn open() !void {}
 
         fn save() !void {}
+
+        fn commonPrefixSearch(self: Self, comptime T: type, key: []const Key, result: []T, result_len: usize, k_len_or_null: ?usize, node_pos_or_null: ?usize) !usize {
+            const k_len = k_len_or_null orelse len(Key, key);
+            const node_pos = node_pos_or_null orelse 0;
+
+            var b: Array = self.array.?[node_pos].base;
+            var num: usize = 0;
+            var n: ?Array = null;
+            var p: ?ArrayU = null;
+
+            for (0..k_len) |i| {
+                p = @intCast(b); // +0;
+                n = self.array.?[p.?].base;
+                if (b == self.array.?[p.?].check and n.? < 0) {
+                    // result[num] = -n-1;
+                    if (num < result_len) try setResult(T, &result[num], -n.? - 1, i);
+                    num += 1;
+                }
+
+                p = @intCast(b + key[i] + 1);
+                if (b == self.array.?[p.?].check)
+                    b = self.array.?[p.?].base
+                else
+                    return num;
+            }
+
+            p = @intCast(b);
+            n = self.array.?[p.?].base;
+
+            if (b == self.array.?[p.?].check and n.? < 0) {
+                if (num < result_len) try setResult(T, &result[num], -n.? - 1, k_len);
+                num += 1;
+            }
+
+            return num;
+        }
 
         fn resize(self: *Self, new_size: usize) !void {
             const tmp = UnitT{
@@ -368,4 +406,24 @@ test "Length func" {
     for (expected, 0..) |e, i| {
         try std.testing.expectEqual(e, da.keyLength(i));
     }
+}
+
+test "commonPrefixSearch" {
+    var da = DoubleArray.init(std.testing.allocator);
+    defer da.deinit();
+
+    const key = &[_][]const u8{ "a", "ab", "abc", "abd", "ba", "bbc", "ca" };
+    try da.build(key.len, key, null, null);
+
+    const input = "abcd";
+
+    const result = try std.testing.allocator.alloc(DoubleArray.ResultPair, 1024);
+    defer std.testing.allocator.free(result);
+
+    const num = try da.commonPrefixSearch(DoubleArray.ResultPair, input, result, result.len, null, null);
+
+    try std.testing.expectEqual(3, num);
+    try std.testing.expect(std.mem.eql(u8, "a", input[0..result[0].length]));
+    try std.testing.expect(std.mem.eql(u8, "ab", input[0..result[1].length]));
+    try std.testing.expect(std.mem.eql(u8, "abc", input[0..result[2].length]));
 }
