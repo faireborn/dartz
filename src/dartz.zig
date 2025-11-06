@@ -135,7 +135,7 @@ pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array
 
             for (0..k_len) |i| {
                 p = @intCast(b); // +0;
-                n = self.array.?[p.?].base;
+                n = self.array.?[p.?].base; // (#) Leaf of trie?
                 if (b == self.array.?[p.?].check and n.? < 0) {
                     // result[num] = -n-1;
                     if (num < result_len) try setResult(T, &result[num], -n.? - 1, i);
@@ -158,6 +158,27 @@ pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array
             }
 
             return num;
+        }
+
+        fn traverse(self: Self, key: []const Key, node_pos: *usize, key_pos: *usize, k_len_or_null: ?usize) !Value {
+            const k_len = k_len_or_null orelse len(Key, key);
+
+            var b = self.array.?[node_pos.*].base;
+            var p: ?ArrayU = null;
+
+            while (key_pos.* < k_len) : (key_pos.* += 1) {
+                p = @intCast(b + key[key_pos.*] + 1);
+                if (b == self.array.?[p.?].check) {
+                    node_pos.* = p.?;
+                    b = self.array.?[p.?].base;
+                } else return error.NoNode;
+            }
+
+            p = @intCast(b);
+            const n = self.array.?[p.?].base;
+            if (b == self.array.?[p.?].check and n < 0) return -n - 1; // Value is Found!
+
+            return error.FoundButNoValue;
         }
 
         fn resize(self: *Self, new_size: usize) !void {
@@ -426,4 +447,24 @@ test "commonPrefixSearch" {
     try std.testing.expect(std.mem.eql(u8, "a", input[0..result[0].length]));
     try std.testing.expect(std.mem.eql(u8, "ab", input[0..result[1].length]));
     try std.testing.expect(std.mem.eql(u8, "abc", input[0..result[2].length]));
+}
+
+test "traverse" {
+    var da = DoubleArray.init(std.testing.allocator);
+    defer da.deinit();
+
+    const key = &[_][]const u8{ "a", "ab", "abc", "abd", "ba", "bbc", "ca" };
+    try da.build(key.len, key, null, null);
+
+    const input = "abc";
+
+    const result = try std.testing.allocator.alloc(DoubleArray.ResultPair, 1024);
+    defer std.testing.allocator.free(result);
+
+    var node_pos: usize = 0;
+    var key_pos: usize = 0;
+    const v = try da.traverse(input, &node_pos, &key_pos, null);
+
+    try std.testing.expectEqual(2, v);
+    try std.testing.expectEqual(3, key_pos);
 }
