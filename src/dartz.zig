@@ -20,7 +20,7 @@ pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array
 
         const Self = @This();
 
-        fn init(allocator: Allocator) Self {
+        pub fn init(allocator: Allocator) Self {
             return .{
                 .array = null,
                 .used = null,
@@ -37,7 +37,7 @@ pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array
             };
         }
 
-        fn deinit(self: *Self) void {
+        pub fn deinit(self: *Self) void {
             self.clear();
         }
 
@@ -52,7 +52,7 @@ pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array
             }
         }
 
-        fn setArray(self: *Self, array: []UnitT, array_size: usize) void {
+        pub fn setArray(self: *Self, array: []UnitT, array_size: usize) void {
             self.clear();
             self.array = array;
             self.array_size = array_size;
@@ -68,19 +68,19 @@ pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array
             self.no_delete = false;
         }
 
-        fn unitSize(_: Self) usize {
+        pub fn unitSize(_: Self) usize {
             return @sizeOf(UnitT);
         }
 
-        fn size(self: Self) usize {
+        pub fn size(self: Self) usize {
             return self.array_size;
         }
 
-        fn totalSize(self: Self) usize {
+        pub fn totalSize(self: Self) usize {
             return self.array_size * @sizeOf(UnitT);
         }
 
-        fn nonZeroSize(self: Self) usize {
+        pub fn nonZeroSize(self: Self) usize {
             var result = 0;
             for (self.array) |unit| {
                 if (unit.check > 0) {
@@ -90,7 +90,7 @@ pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array
             return result;
         }
 
-        fn build(self: *Self, key_size: usize, key: []const []const Key, length_array: ?[]const usize, value_array: ?[]const Value) !void {
+        pub fn build(self: *Self, key_size: usize, key: []const []const Key, length_array: ?[]const usize, value_array: ?[]const Value) !void {
             if (key_size < 1) return error.BuildKeyError;
 
             // Free `used` array and set null
@@ -120,11 +120,11 @@ pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array
             if (self.array_size >= self.alloc_size) try self.resize(self.array_size);
         }
 
-        fn open() !void {}
+        pub fn open() !void {}
 
-        fn save() !void {}
+        pub fn save() !void {}
 
-        fn commonPrefixSearch(self: Self, comptime T: type, key: []const Key, result: []T, result_len: usize, k_len_or_null: ?usize, node_pos_or_null: ?usize) !usize {
+        pub fn commonPrefixSearch(self: Self, comptime T: type, key: []const Key, result: []T, result_len: usize, k_len_or_null: ?usize, node_pos_or_null: ?usize) !usize {
             const k_len = k_len_or_null orelse len(Key, key);
             const node_pos = node_pos_or_null orelse 0;
 
@@ -160,7 +160,7 @@ pub fn DoubleArrayImpl(comptime Node: type, comptime NodeU: type, comptime Array
             return num;
         }
 
-        fn traverse(self: Self, key: []const Key, node_pos: *usize, key_pos: *usize, k_len_or_null: ?usize) !Value {
+        pub fn traverse(self: Self, key: []const Key, node_pos: *usize, key_pos: *usize, k_len_or_null: ?usize) !Value {
             const k_len = k_len_or_null orelse len(Key, key);
 
             var b = self.array.?[node_pos.*].base;
